@@ -76,7 +76,14 @@ for name in "${CASES[@]}"; do
   set -e
   printf '%s_baseline_exit=%s\n' "$name" "$code" >> "$EVIDENCE/provenance.txt"
   cat "$EVIDENCE/$name.baseline.log"
-  test "$code" -ne 0
-  grep -Fq 'ODB-0369' "$EVIDENCE/$name.baseline.log"
+  if [ "$name" = "remove_buffers_survivor_port_nets" ]; then
+    # This is the original bug witness, which must fail before the fix.
+    test "$code" -ne 0
+    grep -Fq 'ODB-0369' "$EVIDENCE/$name.baseline.log"
+  else
+    # The hierarchical fixture is a compatibility control, not a bug witness.
+    test "$code" -eq 0
+    diff -u "$EVIDENCE/$name.ok" "$EVIDENCE/$name.baseline.log"
+  fi
 done
-printf 'negative_controls=PASS\n' >> "$EVIDENCE/provenance.txt"
+printf 'baseline_bug_witness=PASS\nhierarchy_compatibility=PASS\n' >> "$EVIDENCE/provenance.txt"
