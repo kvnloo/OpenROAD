@@ -1,0 +1,33 @@
+name: Fork-only survivor log validation
+on:
+  push:
+    branches: [qa/openroad-11722-log-validation-20261013]
+permissions:
+  contents: read
+concurrency:
+  group: survivor-qa-${{ github.ref }}
+  cancel-in-progress: true
+jobs:
+  validate:
+    if: github.repository == 'kvnloo/OpenROAD'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        with:
+          submodules: recursive
+          persist-credentials: false
+      - name: Capture available merge-build diagnostics
+        run: |
+          mkdir -p qa-evidence
+          curl -fL --max-time 20 https://jenkins.openroad.tools/job/OpenROAD-Public/job/PR-11722-merge/5/consoleText -o qa-evidence/jenkins-merge-5.log || true
+      - name: Execute and verify the candidate and negative controls
+        run: bash qa/validate-survivor-logs.sh
+      - name: Preserve logs even when validation fails
+        if: always()
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
+        with:
+          name: openroad-survivor-evidence
+          path: qa-evidence/
+          if-no-files-found: error
+          retention-days: 7
