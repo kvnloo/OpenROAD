@@ -1,0 +1,37 @@
+name: Fork-only percentile native validation
+on:
+  push:
+    branches: [qa/openroad-11727-native-20261014]
+permissions:
+  contents: read
+concurrency:
+  group: percentile-qa-${{ github.ref }}
+  cancel-in-progress: true
+jobs:
+  validate:
+    if: github.repository == 'kvnloo/OpenROAD'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        with:
+          submodules: recursive
+          persist-credentials: false
+      - name: Install Bazelisk if absent
+        run: |
+          if ! command -v bazelisk; then
+            curl -fL --retry 2 https://github.com/bazelbuild/bazelisk/releases/download/v1.27.0/bazelisk-linux-amd64 -o "$RUNNER_TEMP/bazelisk"
+            chmod +x "$RUNNER_TEMP/bazelisk"
+            echo "$RUNNER_TEMP" >> "$GITHUB_PATH"
+          fi
+          clang-format --version
+      - name: Run native baseline, regression witnesses, and candidate
+        run: python3 qa/validate-percentile-native.py
+      - name: Preserve native logs and formatted candidate
+        if: always()
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
+        with:
+          name: openroad-percentile-native-evidence
+          path: qa-evidence/
+          if-no-files-found: error
+          retention-days: 7

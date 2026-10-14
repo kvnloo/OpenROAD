@@ -1,0 +1,72 @@
+--- a/src/gpl/src/timingBase.cpp
++++ b/src/gpl/src/timingBase.cpp
+@@ -33,6 +33,11 @@
+                       const float slack_max,
+                       const float net_weight_max)
+ {
++  // A tied percentile anchor can still have a more-critical tail below it.
++  if (slack_min == slack_max && std::isfinite(slack_min)
++      && net_slack < slack_min) {
++    return net_weight_max;
++  }
+   if (slack_max <= slack_min) {
+     return 1.0f;
+   }
+--- a/src/gpl/test/timing_base_test.cpp
++++ b/src/gpl/test/timing_base_test.cpp
+@@ -2,6 +2,8 @@
+ // Copyright (c) 2026, The OpenROAD Authors
+ 
+ #include <cstddef>
++#include <limits>
++#include <vector>
+ 
+ #include "gtest/gtest.h"
+ #include "src/gpl/src/timingBase.h"
+@@ -64,5 +66,46 @@
+   EXPECT_NEAR(timingNetWeight(1.0f, 1.0f, 1.0f, 5.0f), 1.0f, kTolerance);
+ }
+ 
++// A percentile tie is not necessarily a flat list: worse nets can remain
++// below the tied anchor and must still receive the configured maximum.
++TEST(TimingNetWeight, TiedAnchorSaturatesMoreCriticalTail)
++{
++  EXPECT_FLOAT_EQ(timingNetWeight(-10e-9f, -1e-9f, -1e-9f, 5.0f), 5.0f);
++  EXPECT_FLOAT_EQ(timingNetWeight(-10e-9f, -1e-9f, -1e-9f, 3.0f), 3.0f);
++  EXPECT_FLOAT_EQ(timingNetWeight(-10e-9f, -1e-9f, -1e-9f, 1.0f), 1.0f);
++}
++
++TEST(TimingNetWeight, TiedAnchorLeavesCeilingAndBetterNetsAtOne)
++{
++  EXPECT_FLOAT_EQ(timingNetWeight(-1e-9f, -1e-9f, -1e-9f, 5.0f), 1.0f);
++  EXPECT_FLOAT_EQ(timingNetWeight(0.0f, -1e-9f, -1e-9f, 5.0f), 1.0f);
++}
++
++TEST(TimingNetWeight, TiedPercentilePreservesTailAcrossListSizes)
++{
++  for (const size_t count : {49u, 50u, 99u, 100u, 150u, 1000u}) {
++    SCOPED_TRACE(count);
++    std::vector<float> slacks(count, -1e-9f);
++    slacks.front() = -10e-9f;
++    const float anchor = slacks[slackRampAnchorIndex(count)];
++    EXPECT_FLOAT_EQ(
++        timingNetWeight(slacks.front(), anchor, slacks.back(), 5.0f), 5.0f);
++    EXPECT_FLOAT_EQ(
++        timingNetWeight(slacks.back(), anchor, slacks.back(), 5.0f), 1.0f);
++  }
++}
++
++TEST(TimingNetWeight, InfiniteTiesRemainUnweighted)
++{
++  const float infinity = std::numeric_limits<float>::infinity();
++  EXPECT_FLOAT_EQ(timingNetWeight(-1.0f, infinity, infinity, 5.0f), 1.0f);
++  EXPECT_FLOAT_EQ(timingNetWeight(-1.0f, -infinity, -infinity, 5.0f), 1.0f);
++}
++
++TEST(TimingNetWeight, ReversedRampRemainsUnweighted)
++{
++  EXPECT_FLOAT_EQ(timingNetWeight(-10.0f, 1.0f, -1.0f, 5.0f), 1.0f);
++}
++
+ }  // namespace
+ }  // namespace gpl
