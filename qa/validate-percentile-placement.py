@@ -72,9 +72,12 @@ def run_arm(arm: str, evidence: Path) -> dict:
         target = f"//src/gpl/test:{test}-tcl_test"
         stem = f"{arm}-{test}"
         output = Path("bazel-testlogs/src/gpl/test") / f"{test}-tcl_test"
-        # Remove old generated XML/log; prevent stale results from being reported.
+        # Invalidate both Bazel outputs and the evidence copy before each run.
+        # A previous successful invocation must not make a later run with
+        # missing native output look green (including when Bazel exits zero).
         for name in ("test.xml", "test.log"):
             (output / name).unlink(missing_ok=True)
+            (evidence / f"{stem}.{name}").unlink(missing_ok=True)
         cmd = ["bazelisk", "test", "--jobs=2", "--disk_cache=",
                "--remote_upload_local_results=false", "--nocache_test_results",
                "--test_output=all", target]
