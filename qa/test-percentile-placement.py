@@ -173,5 +173,34 @@ worst slack max 1.0
             finally:
                 os.chdir(old)
 
+    def test_prior_evidence_cannot_rescue_missing_native_outputs(self):
+        native_log = """[INFO GPL-0100] Timing-driven iteration 1/2, virtual: false.
+[INFO GPL-1001] Global placement finished at iteration 400
+[INFO GPL-1014] Final placement area: 601.79
+[INFO GPL-1018] Final HPWL (um): 2617.69
+worst slack max 1.37
+"""
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            old = Path.cwd()
+            os.chdir(root)
+            try:
+                evidence = root / 'evidence'
+                evidence.mkdir()
+                for test in mod.TESTS:
+                    stem = f'candidate-{test}'
+                    (evidence / f'{stem}.test.xml').write_text(
+                        '<testsuite><testcase name="stale-pass"/></testsuite>')
+                    (evidence / f'{stem}.test.log').write_text(native_log)
+                with patch.object(mod.subprocess, 'run', side_effect=lambda cmd, **kwargs: subprocess.CompletedProcess(cmd, 0)):
+                    results = mod.run_arm('candidate', evidence)
+                self.assertTrue(all(
+                    r['classification'] == 'INFRASTRUCTURE_OR_BUILD_FAILURE'
+                    for r in results.values()))
+                self.assertFalse(any(evidence.glob('*.test.xml')))
+                self.assertFalse(any(evidence.glob('*.test.log')))
+            finally:
+                os.chdir(old)
+
 if __name__ == '__main__':
     unittest.main()
