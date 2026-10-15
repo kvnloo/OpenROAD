@@ -1,0 +1,93 @@
+{
+  "upstream_pr": 11727,
+  "head": "1c84603cfed44245e0ca517ebe89570d3e68a749",
+  "qa_head": "f8bca0cd0945be52250738c56ae095b2b269f888",
+  "fork_run": "https://github.com/kvnloo/OpenROAD/actions/runs/38666737296",
+  "artifact": "https://github.com/kvnloo/OpenROAD/actions/runs/38666737296/artifacts/11943136265",
+  "artifact_sha256": "41608bb6142bbfaf489133c6d7ac6724ab7d2d191805fc8776c18fcbdd143300",
+  "source_blob": "a26775465b014d2ba787ed86502c2332ebf548b6",
+  "candidate_patch_sha256": "847cf4e8ca39cc0a7d7b4fc4472a44de4fa45868e61add951a22e8f4bcc03139",
+  "overall": "BOTH_ARMS_PASS_GOLDEN",
+  "full_flow_qor": false,
+  "fixture": "gcd/Nangate45",
+  "metrics": {
+    "simple01-td": {
+      "baseline": {
+        "classification": "NATIVE_REGRESSION_PASS",
+        "metrics": {
+          "hpwl_um": 2587.54,
+          "placed_area_um2": 601.79,
+          "worst_slack": 1.38,
+          "final_iteration": 370,
+          "timing_driven_iterations": 2
+        },
+        "log_sha256": "8f5caf92e109dd141a840d96dd391bc75ccdaeb6e4937b7ce10316606fc0eb59",
+        "xml_sha256": "fbc3eda195ffc8909ce6e2d90fc792c5a18ed91768e47e483f566b665ea15532"
+      },
+      "candidate": {
+        "classification": "NATIVE_REGRESSION_PASS",
+        "metrics": {
+          "hpwl_um": 2587.54,
+          "placed_area_um2": 601.79,
+          "worst_slack": 1.38,
+          "final_iteration": 370,
+          "timing_driven_iterations": 2
+        },
+        "log_sha256": "5cfa81e528f4f74f596a03c0729e35d0967d3780ab93d82752c960079514d02d",
+        "xml_sha256": "0c2ad5416d3893ab9c998865284cf59b76027b584330d56d7a83334824203095"
+      }
+    },
+    "simple01-td-net-percentage": {
+      "baseline": {
+        "classification": "NATIVE_REGRESSION_PASS",
+        "metrics": {
+          "hpwl_um": 2617.69,
+          "placed_area_um2": 601.79,
+          "worst_slack": 1.37,
+          "final_iteration": 402,
+          "timing_driven_iterations": 2
+        },
+        "log_sha256": "f33bbf8de6eb347db92d5aeb12477e9c56dce0b4f95cf5cec36e0cb3b85e4b81",
+        "xml_sha256": "6bf61bc304ba859c84300ce79750979d103849baaa82c81ce0cfaed2882bda9b"
+      },
+      "candidate": {
+        "classification": "NATIVE_REGRESSION_PASS",
+        "metrics": {
+          "hpwl_um": 2617.69,
+          "placed_area_um2": 601.79,
+          "worst_slack": 1.37,
+          "final_iteration": 402,
+          "timing_driven_iterations": 2
+        },
+        "log_sha256": "c1a3307e80412240ee7b768ce29f9609faab8f860f037db5cf97fe83e80912d2",
+        "xml_sha256": "80125a5a5b62dcabca9c9f81775b56b675130b71bd76b847f25d7d626ab96f54"
+      }
+    },
+    "simple01-td-tune": {
+      "baseline": {
+        "classification": "NATIVE_REGRESSION_PASS",
+        "metrics": {
+          "hpwl_um": 2528.32,
+          "placed_area_um2": 600.99,
+          "worst_slack": 1.38,
+          "final_iteration": 368,
+          "timing_driven_iterations": 7
+        },
+        "log_sha256": "d5d1cb8be940dd3e3857de0f0b9935846051fe6f8c74bd9253703e72c4adafa5",
+        "xml_sha256": "b6428dd0eada29179dc493f0206f13158887661662cd81467e71aa31e31c53c6"
+      },
+      "candidate": {
+        "classification": "NATIVE_REGRESSION_PASS",
+        "metrics": {
+          "hpwl_um": 2528.32,
+          "placed_area_um2": 600.99,
+          "worst_slack": 1.38,
+          "final_iteration": 368,
+          "timing_driven_iterations": 7
+        },
+        "log_sha256": "c3e5864ac6f59b7100e68caebf2fa35b1cd19ae58940de52e73988e8783dae3e",
+        "xml_sha256": "3faee70ee03975ee0344e040726db1d17375d753ad12fa2b671508aa70642d07"
+      }
+    }
+  }
+}
