@@ -75,20 +75,20 @@ def load_companion():
     return qa
 
 
-def probe(qa, arm: str, evidence: Path) -> dict:
+def probe(qa, variant: str, evidence: Path) -> dict:
     output = Path("bazel-testlogs/src/gpl/test") / f"{TEST}-tcl_test"
     original = TCL.read_bytes()
     instrumented = overlay_tcl(original.decode("utf-8"))
     for name in ("test.log", "test.xml"):
         (output / name).unlink(missing_ok=True)
-        (evidence / f"trace-{arm}.{name}").unlink(missing_ok=True)
+        (evidence / f"trace-{variant}.{name}").unlink(missing_ok=True)
     command = ["bazelisk", "test", "--jobs=2", "--disk_cache=",
                "--remote_upload_local_results=false", "--nocache_test_results",
                "--test_output=all", TARGET]
     began = time.monotonic()
     try:
         TCL.write_text(instrumented, encoding="utf-8")
-        with (evidence / f"trace-{arm}.console.log").open("w") as log:
+        with (evidence / f"trace-{variant}.console.log").open("w") as log:
             result = subprocess.run(command, stdout=log, stderr=subprocess.STDOUT,
                                     check=False)
     finally:
@@ -105,10 +105,10 @@ def probe(qa, arm: str, evidence: Path) -> dict:
         path = output / name
         if path.exists():
             raw = path.read_bytes()
-            (evidence / f"trace-{arm}.{name}").write_bytes(raw)
+            (evidence / f"trace-{variant}.{name}").write_bytes(raw)
             record[f"{name}_sha256"] = qa.sha256(raw)
-    logpath = evidence / f"trace-{arm}.test.log"
-    xmlpath = evidence / f"trace-{arm}.test.xml"
+    logpath = evidence / f"trace-{variant}.test.log"
+    xmlpath = evidence / f"trace-{variant}.test.xml"
     if not logpath.is_file() or not xmlpath.is_file():
         record["classification"] = "MISSING_FRESH_NATIVE_OUTPUT"
         return record
@@ -186,9 +186,9 @@ def main() -> int:
         good = report["results"]["candidate"]["classification"] == "NATIVE_TRACE_CAPTURED_DIAGNOSTIC_ONLY"
         report["status"] = "BOTH_TRACES_CAPTURED" if good else "CANDIDATE_TRACE_INCOMPLETE"
         report["potential_tied_tail_events"] = {
-            arm: sum(1 for event in report["results"][arm].get("ramps", [])
+            variant: sum(1 for event in report["results"][variant].get("ramps", [])
                      if event["reported_tie"] and event["reported_below_anchor"] > 0)
-            for arm in ("baseline", "candidate")
+            for variant in ("baseline", "candidate")
         }
         save()
         print(json.dumps({"status": report["status"],
