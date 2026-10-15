@@ -1,0 +1,38 @@
+name: Fork-only OpenROAD percentile placement A/B
+on:
+  push:
+    branches: [qa/openroad-11727-placement-20261014]
+permissions:
+  contents: read
+concurrency:
+  group: placement-ab-${{ github.ref }}
+  cancel-in-progress: true
+jobs:
+  compare:
+    if: github.repository == 'kvnloo/OpenROAD'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 35
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        with:
+          submodules: recursive
+          persist-credentials: false
+      - name: Install Bazelisk if missing
+        run: |
+          if ! command -v bazelisk; then
+            curl -fL --retry 2 https://github.com/bazelbuild/bazelisk/releases/download/v1.27.0/bazelisk-linux-amd64 -o "$RUNNER_TEMP/bazelisk"
+            chmod +x "$RUNNER_TEMP/bazelisk"
+            echo "$RUNNER_TEMP" >> "$GITHUB_PATH"
+          fi
+      - name: Check evidence parser
+        run: python3 qa/test-percentile-placement.py -v
+      - name: Run pinned native GPL baseline and candidate
+        run: python3 qa/validate-percentile-placement.py
+      - name: Preserve raw results even on failure
+        if: always()
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
+        with:
+          name: percentile-placement-ab
+          path: qa-evidence/percentile-placement/
+          if-no-files-found: warn
+          retention-days: 7
