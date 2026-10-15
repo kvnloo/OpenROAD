@@ -1,0 +1,98 @@
+name: Fork-only OpenROAD 11727 full-flow A/B
+
+on:
+  push:
+    branches:
+      - qa/openroad-11727-fullflow-native-20261015
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: openroad-11727-fullflow-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  native-qor:
+    if: github.repository == 'kvnloo/OpenROAD'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 85
+    steps:
+      - name: Checkout fork branch and exact submodules
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        with:
+          fetch-depth: 0
+          submodules: recursive
+          persist-credentials: false
+      - name: Install Bazelisk if missing
+        run: |
+          if ! command -v bazelisk; then
+            curl -fL --retry 2 https://github.com/bazelbuild/bazelisk/releases/download/v1.27.0/bazelisk-linux-amd64 -o "$RUNNER_TEMP/bazelisk"
+            chmod +x "$RUNNER_TEMP/bazelisk"
+            echo "$RUNNER_TEMP" >> "$GITHUB_PATH"
+          fi
+      - name: Verify fork-only exact code provenance
+        shell: bash
+        run: |
+          set -euo pipefail
+          git merge-base --is-ancestor 1c84603cfed44245e0ca517ebe89570d3e68a749 HEAD
+          test "$(git hash-object src/gpl/src/timingBase.cpp)" = a26775465b014d2ba787ed86502c2332ebf548b6
+          test "$(git hash-object src/gpl/test/timing_base_test.cpp)" = ba30cbe27091df92c50d24b1fb9c84ea8b956afd
+          test "$(git hash-object test/flow.tcl)" = 0de2353120425ac47356e552e014bd058b30f5bb
+          test "$(git hash-object test/helpers.tcl)" = 98ea5adbfcbdd604865ef1d9b875eacdadcfedde
+          test "$(git hash-object test/gcd_nangate45.tcl)" = 8d4082c49dfd01570b81eff219d62159330c4de3
+          test "$(git hash-object test/gcd_sky130hd.tcl)" = 87efe1cc513ff895e0c7d49be1168877c21a517e
+          test "$(git hash-object test/aes_nangate45.tcl)" = eed864f1e028b9801bb44c83204f720d844f4b15
+          printf '%s  %s\n' 847cf4e8ca39cc0a7d7b4fc4472a44de4fa45868e61add951a22e8f4bcc03139 qa/11727-tied-percentile.patch | sha256sum -c -
+          git diff --exit-code 1c84603cfed44245e0ca517ebe89570d3e68a749 HEAD -- src third-party MODULE.bazel .bazelrc BUILD.bazel
+          python3 qa/test-11727-fullflow-qor.py -v
+      - name: Install baseline native CLI
+        shell: bash
+        run: |
+          set -euo pipefail
+          mkdir -p qa-evidence/11727-native-fullflow
+          bazelisk run --jobs=2 --//:platform=cli //:install -- "$RUNNER_TEMP/openroad-baseline" > qa-evidence/11727-native-fullflow/base-build.log 2>&1
+          test -x "$RUNNER_TEMP/openroad-baseline/bin/openroad"
+          sha256sum "$RUNNER_TEMP/openroad-baseline/bin/openroad" | tee qa-evidence/11727-native-fullflow/base-binary.sha256
+      - name: Install candidate CLI from the pinned reviewed patch
+        shell: bash
+        run: |
+          set -euo pipefail
+          git apply --check qa/11727-tied-percentile.patch
+          git apply qa/11727-tied-percentile.patch
+          trap 'git apply -R qa/11727-tied-percentile.patch || true' EXIT
+          git diff --check
+          changed="$(git diff --name-only | LC_ALL=C sort)"
+          expected="$(printf 'src/gpl/src/timingBase.cpp\nsrc/gpl/test/timing_base_test.cpp' | LC_ALL=C sort)"
+          test "$changed" = "$expected"
+          bazelisk run --jobs=2 --//:platform=cli //:install -- "$RUNNER_TEMP/openroad-candidate" > qa-evidence/11727-native-fullflow/candidate-build.log 2>&1
+          test -x "$RUNNER_TEMP/openroad-candidate/bin/openroad"
+          sha256sum "$RUNNER_TEMP/openroad-candidate/bin/openroad" | tee qa-evidence/11727-native-fullflow/candidate-binary.sha256
+          git apply -R qa/11727-tied-percentile.patch
+          trap - EXIT
+          git diff --exit-code -- src/gpl/src/timingBase.cpp src/gpl/test/timing_base_test.cpp
+          if cmp -s "$RUNNER_TEMP/openroad-baseline/bin/openroad" "$RUNNER_TEMP/openroad-candidate/bin/openroad"; then
+            echo 'Identical compiled binaries, cannot interpret this A/B' >&2
+            exit 1
+          fi
+      - name: Execute pinned native A/B for gcd Nangate45
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 qa/11727-fullflow-qor.py \
+            --repo "$PWD" \
+            --baseline "$RUNNER_TEMP/openroad-baseline/bin/openroad" \
+            --candidate "$RUNNER_TEMP/openroad-candidate/bin/openroad" \
+            --candidate-patch-sha256 847cf4e8ca39cc0a7d7b4fc4472a44de4fa45868e61add951a22e8f4bcc03139 \
+            --timing-nets-percentage 10 \
+            --case nangate45/gcd --timeout-sec 1200 \
+            --output "$PWD/qa-evidence/11727-native-fullflow/gcd-nangate45-pct10"
+      - name: Preserve raw native evidence, including failures
+        if: always()
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
+        with:
+          name: openroad-11727-fullflow-gcd-nangate45-pct10
+          path: qa-evidence/11727-native-fullflow/
+          if-no-files-found: warn
+          retention-days: 7
