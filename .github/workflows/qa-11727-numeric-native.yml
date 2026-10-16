@@ -1,0 +1,122 @@
+name: Fork-only GPL numeric safety native A/B
+on:
+  push:
+    branches: [qa/openroad-11727-numeric-native-20261016]
+permissions:
+  contents: read
+concurrency:
+  group: gpl-numeric-ab-${{ github.ref }}
+  cancel-in-progress: true
+jobs:
+  timing-weight:
+    if: github.repository == 'kvnloo/OpenROAD'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 55
+    steps:
+      - name: Checkout exact upstream PR head with submodules
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        with:
+          # Preserve exact upstream ancestry through the fork QA commits.
+          fetch-depth: 16
+          submodules: recursive
+          persist-credentials: false
+      - name: Verify source and patch provenance
+        shell: bash
+        run: |
+          set -euo pipefail
+          mkdir -p qa-evidence/numeric-11727
+          upstream_head=15ddd71883df6818fadae51ede8676d8bca96978
+          git cat-file -e "${upstream_head}^{commit}"
+          git merge-base --is-ancestor "$upstream_head" HEAD
+          git diff --quiet "$upstream_head" HEAD -- src/gpl/src/timingBase.cpp src/gpl/test/timing_base_test.cpp
+          test "$(git hash-object src/gpl/src/timingBase.cpp)" = e67773a8c2e25829d12e1bb04b151be7acc1983b
+          test "$(git hash-object src/gpl/test/timing_base_test.cpp)" = 12c1dc6b5d3910cf86fa95cdf9faa9f15be65485
+          printf '%s  %s\n' ddf754770381da7b5ffd12590ae1ef2e2fd2bbebded0eb320f293f57d0abdbcb qa/11727-numeric-float-fastpath.patch | sha256sum --check
+          git apply --check qa/11727-numeric-float-fastpath.patch
+          printf '%s\n' "$upstream_head" > qa-evidence/numeric-11727/upstream-head.txt
+          sha256sum qa/11727-numeric-float-fastpath.patch > qa-evidence/numeric-11727/patch.sha256
+      - name: Resolve actual formatter
+        shell: bash
+        run: |
+          set -euo pipefail
+          if command -v clang-format-18; then
+            echo "CF=clang-format-18" >> "$GITHUB_ENV"
+            clang-format-18 --version
+          elif command -v clang-format; then
+            echo "CF=clang-format" >> "$GITHUB_ENV"
+            clang-format --version
+          else
+            sudo apt-get update -qq
+            sudo apt-get install -y -qq clang-format-18
+            echo "CF=clang-format-18" >> "$GITHUB_ENV"
+            clang-format-18 --version
+          fi
+      - name: Install Bazelisk if missing
+        shell: bash
+        run: |
+          set -euo pipefail
+          if ! command -v bazelisk; then
+            curl -fL --retry 2 https://github.com/bazelbuild/bazelisk/releases/download/v1.27.0/bazelisk-linux-amd64 -o "$RUNNER_TEMP/bazelisk"
+            chmod +x "$RUNNER_TEMP/bazelisk"
+            echo "$RUNNER_TEMP" >> "$GITHUB_PATH"
+          fi
+      - name: Extended tests against unmodified PR algorithm (expected red)
+        shell: bash
+        run: |
+          set -euo pipefail
+          git apply --include=src/gpl/test/timing_base_test.cpp qa/11727-numeric-float-fastpath.patch
+          "$CF" -i src/gpl/test/timing_base_test.cpp
+          "$CF" --dry-run --Werror src/gpl/test/timing_base_test.cpp
+          git diff --check
+          set +e
+          bazelisk test --jobs=2 --disk_cache= --remote_upload_local_results=false --nocache_test_results --test_output=errors //src/gpl/test:timing_base_test > qa-evidence/numeric-11727/baseline.console.log 2>&1
+          status=$?
+          set -e
+          test "$status" -ne 0
+          cp bazel-testlogs/src/gpl/test/timing_base_test/test.xml qa-evidence/numeric-11727/baseline.xml
+          cp bazel-testlogs/src/gpl/test/timing_base_test/test.log qa-evidence/numeric-11727/baseline.test.log
+      - name: Candidate native test after actual formatting
+        shell: bash
+        run: |
+          set -euo pipefail
+          git apply --include=src/gpl/src/timingBase.cpp qa/11727-numeric-float-fastpath.patch
+          "$CF" -i src/gpl/src/timingBase.cpp src/gpl/test/timing_base_test.cpp
+          "$CF" --dry-run --Werror src/gpl/src/timingBase.cpp src/gpl/test/timing_base_test.cpp
+          git diff --check
+          git diff -- src/gpl/src/timingBase.cpp src/gpl/test/timing_base_test.cpp > qa-evidence/numeric-11727/formatted-candidate.diff
+          bazelisk test --jobs=2 --disk_cache= --remote_upload_local_results=false --nocache_test_results --test_output=errors //src/gpl/test:timing_base_test > qa-evidence/numeric-11727/candidate.console.log 2>&1
+          cp bazel-testlogs/src/gpl/test/timing_base_test/test.xml qa-evidence/numeric-11727/candidate.xml
+          cp bazel-testlogs/src/gpl/test/timing_base_test/test.log qa-evidence/numeric-11727/candidate.test.log
+      - name: Fail closed on unexpected native results
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 - <<'PY'
+          from pathlib import Path
+          import xml.etree.ElementTree as ET
+          root = Path("qa-evidence/numeric-11727")
+          expected = {"FiniteWideRangeHasCorrectMidpointAndQuarter", "RejectsNonFiniteInputs"}
+          def results(file):
+              cases = list(ET.parse(root / file).getroot().iter("testcase"))
+              if len(cases) < 9:
+                  raise SystemExit(f"{file}: missing native cases")
+              if any(c.find("skipped") is not None for c in cases):
+                  raise SystemExit(f"{file}: skipped native case")
+              bad = {c.get("name") for c in cases if any(c.find(k) is not None for k in ("failure", "error"))}
+              return cases, bad
+          baseline, base_bad = results("baseline.xml")
+          candidate, cand_bad = results("candidate.xml")
+          assert base_bad == expected, (base_bad, expected)
+          assert len(candidate) == len(baseline)
+          assert not cand_bad, cand_bad
+          (root / "result.txt").write_text(f"native_count={len(candidate)}\nbaseline_failures={sorted(base_bad)}\ncandidate_failures=0\n")
+          print((root / "result.txt").read_text())
+          PY
+      - name: Retain native XML logs and formatted patch
+        if: always()
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
+        with:
+          name: gpl-11727-numeric-native-proof
+          path: qa-evidence/numeric-11727/
+          if-no-files-found: warn
+          retention-days: 14

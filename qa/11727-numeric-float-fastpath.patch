@@ -1,0 +1,72 @@
+diff --git a/src/gpl/src/timingBase.cpp b/src/gpl/src/timingBase.cpp
+index cf89ea4..67507c5 100644
+--- a/src/gpl/src/timingBase.cpp
++++ b/src/gpl/src/timingBase.cpp
+@@ -44,9 +44,26 @@ float computeTimingNetWeight(const float net_slack,
+   if (slack_max <= slack_min) {
+     return 1.0f;
+   }
+-  const float criticality = std::clamp(
+-      (slack_max - net_slack) / (slack_max - slack_min), 0.0f, 1.0f);
+-  return 1.0f + (net_weight_max - 1.0f) * criticality;
++  // Invalid slacks and weights must not reach Nesterov placement forces.
++  if (!std::isfinite(net_slack) || !std::isfinite(slack_min)
++      || !std::isfinite(slack_max) || !std::isfinite(net_weight_max)) {
++    return 1.0f;
++  }
++
++  // Preserve ordinary float rounding; only exceptional arithmetic needs
++  // double-precision interpolation.
++  const float span = slack_max - net_slack;
++  const float range = slack_max - slack_min;
++  if (std::isfinite(span) && std::isfinite(range) && range > 0.0f) {
++    const float criticality = std::clamp(span / range, 0.0f, 1.0f);
++    return 1.0f + (net_weight_max - 1.0f) * criticality;
++  }
++  const double criticality = std::clamp(
++      (static_cast<double>(slack_max) - net_slack)
++          / (static_cast<double>(slack_max) - slack_min),
++      0.0,
++      1.0);
++  return 1.0f + (net_weight_max - 1.0f) * static_cast<float>(criticality);
+ }
+ 
+ // TimingBase
+diff --git a/src/gpl/test/timing_base_test.cpp b/src/gpl/test/timing_base_test.cpp
+index 09c4d94..2e67051 100644
+--- a/src/gpl/test/timing_base_test.cpp
++++ b/src/gpl/test/timing_base_test.cpp
+@@ -3,6 +3,7 @@
+ 
+ #include <cmath>
+ #include <cstddef>
++#include <limits>
+ 
+ #include "gtest/gtest.h"
+ #include "src/gpl/src/timingBase.h"
+@@ -25,5 +26,25 @@ TEST(TimingNetWeight, FlatRampLeavesWeightsAtOne)
+   EXPECT_NEAR(computeTimingNetWeight(1.0f, 1.0f, 1.0f, 5.0f), 1.0f, kTolerance);
+ }
+ 
++// The endpoints can be finite while their float difference overflows.
++TEST(TimingNetWeight, FiniteWideRangeHasCorrectMidpointAndQuarter)
++{
++  constexpr float kHuge = std::numeric_limits<float>::max();
++  EXPECT_FLOAT_EQ(computeTimingNetWeight(0.0f, -kHuge, kHuge, 5.0f), 3.0f);
++  EXPECT_FLOAT_EQ(
++      computeTimingNetWeight(-kHuge / 2, -kHuge, kHuge, 5.0f), 4.0f);
++}
++
++// A malformed timing value must not propagate NaN or infinity to placement.
++TEST(TimingNetWeight, RejectsNonFiniteInputs)
++{
++  const float inf = std::numeric_limits<float>::infinity();
++  const float nan = std::numeric_limits<float>::quiet_NaN();
++  EXPECT_FLOAT_EQ(computeTimingNetWeight(nan, -1.0f, 1.0f, 5.0f), 1.0f);
++  EXPECT_FLOAT_EQ(computeTimingNetWeight(0.0f, nan, 1.0f, 5.0f), 1.0f);
++  EXPECT_FLOAT_EQ(computeTimingNetWeight(0.0f, -1.0f, inf, 5.0f), 1.0f);
++  EXPECT_FLOAT_EQ(computeTimingNetWeight(0.0f, -1.0f, 1.0f, inf), 1.0f);
++}
++
+ }  // namespace
+ }  // namespace gpl
