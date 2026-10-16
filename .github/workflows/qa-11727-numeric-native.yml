@@ -16,7 +16,8 @@ jobs:
       - name: Checkout exact upstream PR head with submodules
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
         with:
-          fetch-depth: 4
+          # Preserve exact upstream ancestry through the fork QA commits.
+          fetch-depth: 16
           submodules: recursive
           persist-credentials: false
       - name: Verify source and patch provenance
@@ -24,12 +25,15 @@ jobs:
         run: |
           set -euo pipefail
           mkdir -p qa-evidence/numeric-11727
-          test "$(git rev-parse HEAD~2)" = 15ddd71883df6818fadae51ede8676d8bca96978
+          upstream_head=15ddd71883df6818fadae51ede8676d8bca96978
+          git cat-file -e "${upstream_head}^{commit}"
+          git merge-base --is-ancestor "$upstream_head" HEAD
+          git diff --quiet "$upstream_head" HEAD -- src/gpl/src/timingBase.cpp src/gpl/test/timing_base_test.cpp
           test "$(git hash-object src/gpl/src/timingBase.cpp)" = e67773a8c2e25829d12e1bb04b151be7acc1983b
           test "$(git hash-object src/gpl/test/timing_base_test.cpp)" = 12c1dc6b5d3910cf86fa95cdf9faa9f15be65485
           printf '%s  %s\n' ddf754770381da7b5ffd12590ae1ef2e2fd2bbebded0eb320f293f57d0abdbcb qa/11727-numeric-float-fastpath.patch | sha256sum --check
           git apply --check qa/11727-numeric-float-fastpath.patch
-          git rev-parse HEAD~2 > qa-evidence/numeric-11727/upstream-head.txt
+          printf '%s\n' "$upstream_head" > qa-evidence/numeric-11727/upstream-head.txt
           sha256sum qa/11727-numeric-float-fastpath.patch > qa-evidence/numeric-11727/patch.sha256
       - name: Resolve actual formatter
         shell: bash
